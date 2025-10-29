@@ -1,11 +1,14 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Sharp.Shared.Enums;
 using Sharp.Shared.Types;
 using ServerGui;
+using ServerGui.Schemas.Enums;
 
 namespace ServerGui.Resolvers.PropertyValueResolver;
 
@@ -16,18 +19,8 @@ public class EnumValueReader
 {
     private readonly ILogger<EnumValueReader> _logger;
 
-    // Single source of truth for all supported enum types and their handlers
-    private static readonly Dictionary<string, Func<nint, string, string, string?>> TypeHandlers = new()
-    {
-        ["Color"] = GetColorValue,
-        ["HitGroup_t"] = CreateHandler<HitGroupType>(),
-        ["RenderFx_t"] = CreateHandler<RenderFx>(),
-        ["RenderMode_t"] = CreateHandler<RenderMode>(),
-        ["MoveType_t"] = CreateHandler<MoveType>(),
-        ["MoveCollide_t"] = CreateHandler<MoveCollideType>(),
-        ["TakeDamageFlags_t"] = CreateHandler<TakeDamageFlags>(),
-        ["DecalMode_t"] = CreateHandler<byte>(),
-    };
+    // Cache of enum type names to their Type objects
+    private static readonly Dictionary<string, Type> EnumTypes = InitializeEnumTypes();
 
     public EnumValueReader(ILogger<EnumValueReader> logger)
     {
@@ -41,14 +34,21 @@ public class EnumValueReader
     {
         enumType = NormalizeType(enumType);
 
-        if (!TypeHandlers.TryGetValue(enumType, out var handler))
+        // Special handling for Color
+        if (enumType == "Color")
+        {
+            return GetColorValue(entityPtr, classname, propertyName);
+        }
+
+        // Look up the enum type and cast directly to it
+        if (!EnumTypes.TryGetValue(enumType, out var enumTypeObj))
         {
             return null;
         }
 
         try
         {
-            return handler(entityPtr, classname, propertyName);
+            return GetEnumValueDynamic(entityPtr, classname, propertyName, enumTypeObj);
         }
         catch (Exception ex)
         {
@@ -63,19 +63,37 @@ public class EnumValueReader
     public bool CanHandle(string type)
     {
         type = NormalizeType(type);
-        return TypeHandlers.ContainsKey(type);
+        return type == "Color" || EnumTypes.ContainsKey(type);
     }
 
     /// <summary>
-    /// Gets a generic enum value using unsafe code.
+    /// Gets an enum value dynamically by casting directly to the enum type.
     /// </summary>
-    private static string? GetEnumValue<T>(nint entityPtr, string classname, string propertyName) where T : unmanaged
+    private static string? GetEnumValueDynamic(nint entityPtr, string classname, string propertyName, Type enumType)
     {
+        var underlyingType = Enum.GetUnderlyingType(enumType);
+        
         unsafe
         {
             var netvarOffset = SchemaSystem.GetNetVarOffset(classname, propertyName);
-            var enumValue = *(T*)(entityPtr + netvarOffset);
-            return enumValue.ToString();
+            
+            // Read the raw value based on underlying type
+            object rawValue = underlyingType.Name switch
+            {
+                "Byte" => *(byte*)(entityPtr + netvarOffset),
+                "SByte" => *(sbyte*)(entityPtr + netvarOffset),
+                "UInt16" => *(ushort*)(entityPtr + netvarOffset),
+                "Int16" => *(short*)(entityPtr + netvarOffset),
+                "UInt32" => *(uint*)(entityPtr + netvarOffset),
+                "Int32" => *(int*)(entityPtr + netvarOffset),
+                "UInt64" => *(ulong*)(entityPtr + netvarOffset),
+                "Int64" => *(long*)(entityPtr + netvarOffset),
+                _ => throw new NotSupportedException($"Unsupported enum underlying type: {underlyingType.Name}")
+            };
+            
+            // Cast to the enum type and get string representation
+            var enumValue = Enum.ToObject(enumType, rawValue);
+            return $"{enumValue} ({rawValue})";
         }
     }
 
@@ -97,9 +115,26 @@ public class EnumValueReader
         return type;
     }
 
-    private static Func<nint, string, string, string?> CreateHandler<T>() where T : unmanaged
+    /// <summary>
+    /// Initializes the enum types dictionary by automatically discovering all enums from Schemas.Enums.
+    /// </summary>
+    private static Dictionary<string, Type> InitializeEnumTypes()
     {
-        return GetEnumValue<T>;
+        var enumTypes = new Dictionary<string, Type>();
+
+        // Automatically discover all enum types from ServerGui.Schemas.Enums namespace
+        var enumsNamespace = "ServerGui.Schemas.Enums";
+        var discoveredEnumTypes = Assembly.GetExecutingAssembly()
+            .GetTypes()
+            .Where(t => t.IsEnum && t.Namespace == enumsNamespace && t.Name != "Color")
+            .ToList();
+
+        foreach (var enumType in discoveredEnumTypes)
+        {
+            enumTypes[enumType.Name] = enumType;
+        }
+
+        return enumTypes;
     }
 }
 
