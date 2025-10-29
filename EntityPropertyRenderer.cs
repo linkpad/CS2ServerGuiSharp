@@ -12,6 +12,7 @@ using Sharp.Shared.Types;
 using Sharp.Shared.Types.Tier;
 using Sharp.Shared.Utilities;
 using ServerGui.Resolvers.PropertyValueResolver;
+using Sharp.Shared.Units;
 
 namespace ServerGui;
 
@@ -165,6 +166,13 @@ public class EntityPropertyRenderer
             return;
         }
 
+        // Handle entity index types - render as a simple property
+        if (customTypeInfo.Kind == CustomTypeKind.EntityIndex)
+        {
+            RenderEntityIndexType(fieldName, customTypeInfo);
+            return;
+        }
+
         // Handle entity handle types - resolve the handle here since we have access to unsafe code
         if (customTypeInfo.Kind == CustomTypeKind.EntityHandle)
         {
@@ -296,6 +304,35 @@ public class EntityPropertyRenderer
     }
 
     /// <summary>
+    /// Renders an entity index type.
+    /// </summary>
+    private void RenderEntityIndexType(string fieldName, CustomTypeInfo customTypeInfo)
+    {
+        var entityFound = ResolveEntityIndex(customTypeInfo.TargetPtr);
+        
+        if (entityFound != null)
+        {
+            ImGui.TableNextRow();
+            ImGui.TableSetColumnIndex(0);
+            ImGui.TreeNodeEx(fieldName, ImGuiTreeNodeFlags.NoTreePushOnOpen | ImGuiTreeNodeFlags.Leaf);
+
+            ImGui.TableSetColumnIndex(1);
+            ImGui.Text(customTypeInfo.FieldType);
+
+            ImGui.TableSetColumnIndex(2);
+            if (ImGui.SmallButton($"{entityFound.Classname} ({entityFound.Index})"))
+            {
+                _logger.LogInformation("Setting selected entity to {Entity}", entityFound.Classname);
+                _onEntitySelected?.Invoke(entityFound);
+            }
+        }
+        else
+        {
+            DrawProperty(fieldName, customTypeInfo.FieldType, "Entity not found");
+        }
+    }
+
+    /// <summary>
     /// Renders an entity handle type.
     /// </summary>
     private void RenderEntityHandleType(string fieldName, CustomTypeInfo customTypeInfo)
@@ -358,6 +395,18 @@ public class EntityPropertyRenderer
         {
             var handlePtr_typed = (CEntityHandle<IBaseEntity>*)handlePtr;
             return _bridge.EntityManager.FindEntityByHandle(*handlePtr_typed);
+        }
+    }
+
+    /// <summary>
+    /// Resolves an entity index from a pointer location.
+    /// </summary>
+    private IBaseEntity? ResolveEntityIndex(nint indexPtr)
+    {
+        unsafe
+        {
+            var indexPtr_typed = (EntityIndex*)indexPtr;
+            return _bridge.EntityManager.FindEntityByIndex(*indexPtr_typed);
         }
     }
 

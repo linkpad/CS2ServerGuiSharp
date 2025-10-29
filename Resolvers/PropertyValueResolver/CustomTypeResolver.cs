@@ -37,6 +37,11 @@ public class CustomTypeResolver
                 return ResolveEntityHandleType(entityPtr, netvarOffset, schemaClassname, fieldType);
             }
 
+            if (fieldType.Contains("CEntityIndex"))
+            {
+                return ResolveEntityIndexType(entityPtr, netvarOffset, schemaClassname, fieldType);
+            }
+
             // Handle pointer types
             if (fieldType.Contains("*"))
             {
@@ -97,6 +102,21 @@ public class CustomTypeResolver
         return new CustomTypeInfo
         {
             Kind = CustomTypeKind.EntityHandle,
+            TargetPtr = handlePtr,
+            SchemaClassname = schemaClassname,
+            FieldType = fieldType
+        };
+    }
+
+    /// <summary>
+    /// Resolves an entity index (CEntityIndex) type.
+    /// </summary>
+    private CustomTypeInfo ResolveEntityIndexType(nint entityPtr, int netvarOffset, string schemaClassname, string fieldType)
+    {
+        var handlePtr = entityPtr + netvarOffset;
+        return new CustomTypeInfo
+        {
+            Kind = CustomTypeKind.EntityIndex,
             TargetPtr = handlePtr,
             SchemaClassname = schemaClassname,
             FieldType = fieldType

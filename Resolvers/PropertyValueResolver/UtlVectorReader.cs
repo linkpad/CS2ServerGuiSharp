@@ -1,15 +1,11 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
-using Sharp.Shared;
 using Sharp.Shared.CStrike;
 using Sharp.Shared.GameEntities;
 using Sharp.Shared.Types;
 using Sharp.Shared.Types.Tier;
-using Sharp.Shared.Utilities;
 
 namespace ServerGui.Resolvers.PropertyValueResolver;
 
@@ -21,9 +17,30 @@ public class UtlVectorReader
     private readonly InterfaceBridge _bridge;
     private readonly ILogger<UtlVectorReader> _logger;
 
-    private static readonly string[] PrimitiveTypes = {
-        "int32", "int", "float32", "float", "bool",
-        "uint8", "uint16", "uint32", "uint64", "int8", "int16", "int64"
+    /// <summary>
+    /// Maps primitive type names to their C# type handlers.
+    /// </summary>
+    private static readonly Dictionary<string, Func<nint, ILogger<UtlVectorReader>, List<UtlVectorElement>?>> PrimitiveTypeHandlers = new()
+    {
+        // Signed integers
+        ["int8"] = (ptr, logger) => ReadPrimitiveVector<sbyte>(ptr, "int8", logger),
+        ["int16"] = (ptr, logger) => ReadPrimitiveVector<short>(ptr, "int16", logger),
+        ["int32"] = (ptr, logger) => ReadPrimitiveVector<int>(ptr, "int32", logger),
+        ["int"] = (ptr, logger) => ReadPrimitiveVector<int>(ptr, "int", logger),
+        ["int64"] = (ptr, logger) => ReadPrimitiveVector<long>(ptr, "int64", logger),
+
+        // Unsigned integers
+        ["uint8"] = (ptr, logger) => ReadPrimitiveVector<byte>(ptr, "uint8", logger),
+        ["uint16"] = (ptr, logger) => ReadPrimitiveVector<ushort>(ptr, "uint16", logger),
+        ["uint32"] = (ptr, logger) => ReadPrimitiveVector<uint>(ptr, "uint32", logger),
+        ["uint64"] = (ptr, logger) => ReadPrimitiveVector<ulong>(ptr, "uint64", logger),
+
+        // Floating point
+        ["float32"] = (ptr, logger) => ReadPrimitiveVector<float>(ptr, "float32", logger),
+        ["float"] = (ptr, logger) => ReadPrimitiveVector<float>(ptr, "float", logger),
+
+        // Boolean
+        ["bool"] = (ptr, logger) => ReadPrimitiveVector<bool>(ptr, "bool", logger),
     };
 
     public UtlVectorReader(InterfaceBridge bridge, ILogger<UtlVectorReader> logger)
@@ -49,26 +66,23 @@ public class UtlVectorReader
 
         try
         {
-            // Handle CEntityHandle<IBaseEntity> or similar entity handle types
-            if (elementType.Contains("CEntityHandle<") || elementType.Contains("CHandle<"))
+            return elementType switch
             {
-                return ReadUtlVectorEntityHandles(ptr);
-            }
+                // Entity handles
+                var et when et.Contains("CEntityHandle<") || et.Contains("CHandle<") 
+                    => ReadUtlVectorEntityHandles(ptr),
 
-            // Handle Vector types (Vector, VectorWS, QAngle, etc.)
-            if (elementType.Contains("Vector") || elementType.Contains("QAngle"))
-            {
-                return ReadUtlVectorVectors(ptr);
-            }
+                // Vector types
+                var et when et.Contains("Vector") || et.Contains("QAngle") 
+                    => ReadUtlVectorVectors(ptr),
 
-            // Handle primitive types (int, float, bool, etc.)
-            if (IsPrimitiveType(elementType))
-            {
-                return ReadUtlVectorPrimitives(ptr, elementType);
-            }
+                // Primitive types
+                var et when PrimitiveTypeHandlers.TryGetValue(et, out var handler) 
+                    => handler(ptr, _logger),
 
-            _logger.LogWarning("Unsupported UtlVector element type: {ElementType}", elementType);
-            return null;
+                // Unsupported type
+                _ => HandleUnsupportedType(elementType)
+            };
         }
         catch (Exception ex)
         {
@@ -85,22 +99,18 @@ public class UtlVectorReader
         unsafe
         {
             var vector = *(CUtlVector<CEntityHandle<IBaseEntity>>*)ptr;
-            var elements = new List<UtlVectorElement>();
-
-            for (int i = 0; i < vector.Size; i++)
+            return ReadVectorElements(vector.Size, i =>
             {
                 var handle = vector[i];
                 var entity = _bridge.EntityManager.FindEntityByHandle(handle);
 
-                elements.Add(new UtlVectorElement
+                return new UtlVectorElement
                 {
                     ElementType = "CEntityHandle<IBaseEntity>",
                     ElementKind = UtlVectorElementKind.EntityHandle,
                     Entity = entity
-                });
-            }
-
-            return elements;
+                };
+            });
         }
     }
 
@@ -112,68 +122,26 @@ public class UtlVectorReader
         unsafe
         {
             var vector = *(CUtlVector<Vector>*)ptr;
-            var elements = new List<UtlVectorElement>();
-
-            for (int i = 0; i < vector.Size; i++)
+            return ReadVectorElements(vector.Size, i => new UtlVectorElement
             {
-                var vec = vector[i];
-                elements.Add(new UtlVectorElement
-                {
-                    ElementType = "Vector",
-                    ElementKind = UtlVectorElementKind.Vector,
-                    StringValue = vec.ToString()
-                });
-            }
-
-            return elements;
-        }
-    }
-
-    /// <summary>
-    /// Reads primitive values from a UtlVector.
-    /// </summary>
-    private List<UtlVectorElement> ReadUtlVectorPrimitives(nint ptr, string elementType)
-    {
-        unsafe
-        {
-            var elements = new List<UtlVectorElement>();
-
-            switch (elementType)
-            {
-                case "int32":
-                case "int":
-                    ReadPrimitiveVector<int>(ptr, elementType, elements);
-                    break;
-
-                case "float32":
-                case "float":
-                    ReadPrimitiveVector<float>(ptr, elementType, elements);
-                    break;
-
-                case "bool":
-                    ReadPrimitiveVector<bool>(ptr, elementType, elements);
-                    break;
-
-                default:
-                    _logger.LogWarning("Unsupported primitive type for UtlVector: {ElementType}", elementType);
-                    return new List<UtlVectorElement>();
-            }
-
-            return elements;
+                ElementType = "Vector",
+                ElementKind = UtlVectorElementKind.Vector,
+                StringValue = vector[i].ToString()
+            });
         }
     }
 
     /// <summary>
     /// Generic helper to read primitive values from a UtlVector.
     /// </summary>
-    private static void ReadPrimitiveVector<T>(nint ptr, string elementType, List<UtlVectorElement> elements) where T : unmanaged
+    private static List<UtlVectorElement>? ReadPrimitiveVector<T>(nint ptr, string elementType, ILogger<UtlVectorReader> logger) where T : unmanaged
     {
-        unsafe
+        try
         {
-            var vector = *(CUtlVector<T>*)ptr;
-            for (int i = 0; i < vector.Size; i++)
+            unsafe
             {
-                elements.Add(new UtlVectorElement
+                var vector = *(CUtlVector<T>*)ptr;
+                return ReadVectorElements(vector.Size, i => new UtlVectorElement
                 {
                     ElementType = elementType,
                     ElementKind = UtlVectorElementKind.Primitive,
@@ -181,14 +149,32 @@ public class UtlVectorReader
                 });
             }
         }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Error reading UtlVector of primitive type {ElementType}", elementType);
+            return null;
+        }
     }
 
     /// <summary>
-    /// Checks if the given type is a primitive type.
+    /// Generic helper to create UtlVectorElement list from vector elements.
     /// </summary>
-    private static bool IsPrimitiveType(string type)
+    private static List<UtlVectorElement> ReadVectorElements(int size, Func<int, UtlVectorElement> elementFactory)
     {
-        return PrimitiveTypes.Contains(type);
+        var elements = new List<UtlVectorElement>(size);
+        for (int i = 0; i < size; i++)
+        {
+            elements.Add(elementFactory(i));
+        }
+        return elements;
+    }
+
+    /// <summary>
+    /// Handles unsupported element types.
+    /// </summary>
+    private List<UtlVectorElement>? HandleUnsupportedType(string elementType)
+    {
+        _logger.LogWarning("Unsupported UtlVector element type: {ElementType}", elementType);
+        return null;
     }
 }
-

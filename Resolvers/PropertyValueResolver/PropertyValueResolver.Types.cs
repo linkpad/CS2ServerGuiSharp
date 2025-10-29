@@ -49,6 +49,8 @@ public enum CustomTypeKind
 {
     /// <summary>CHandle&lt;T&gt; - Entity handle reference</summary>
     EntityHandle,
+    /// <summary>CEntityIndex - Entity index</summary>
+    EntityIndex,
     /// <summary>Pointer type (*)</summary>
     Pointer,
     /// <summary>UtlVector type (CNetworkUtlVectorBase&lt;T&gt;)</summary>

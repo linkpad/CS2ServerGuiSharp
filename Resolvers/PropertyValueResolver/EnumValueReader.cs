@@ -26,6 +26,7 @@ public class EnumValueReader
         ["MoveType_t"] = CreateHandler<MoveType>(),
         ["MoveCollide_t"] = CreateHandler<MoveCollideType>(),
         ["TakeDamageFlags_t"] = CreateHandler<TakeDamageFlags>(),
+        ["DecalMode_t"] = CreateHandler<byte>(),
     };
 
     public EnumValueReader(ILogger<EnumValueReader> logger)
