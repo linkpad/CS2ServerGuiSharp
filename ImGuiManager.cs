@@ -8,6 +8,7 @@ using Silk.NET.Input;
 using Silk.NET.OpenGL;
 using Silk.NET.OpenGL.Extensions.ImGui;
 using ImGuiNET;
+using ServerGui.Resolvers.PropertyValueResolver;
 
 namespace ServerGui;
 
@@ -55,7 +56,8 @@ public sealed class ImGuiManager
                 // Initialize dependencies
                 var propertyValueResolver = new PropertyValueResolver(
                     _bridge,
-                    _serviceProvider.GetRequiredService<ILogger<PropertyValueResolver>>()
+                    _serviceProvider.GetRequiredService<ILogger<PropertyValueResolver>>(),
+                    _serviceProvider.GetRequiredService<ILoggerFactory>()
                 );
                 
                 // Initialize Entity Browser without property renderer

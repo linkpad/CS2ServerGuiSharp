@@ -11,6 +11,7 @@ using Sharp.Shared.GameObjects;
 using Sharp.Shared.Types;
 using Sharp.Shared.Types.Tier;
 using Sharp.Shared.Utilities;
+using ServerGui.Resolvers.PropertyValueResolver;
 
 namespace ServerGui;
 
