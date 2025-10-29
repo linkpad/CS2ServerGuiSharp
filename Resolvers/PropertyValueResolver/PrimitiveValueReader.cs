@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
 using ServerGui;
 
@@ -12,6 +13,32 @@ public class PrimitiveValueReader
 {
     private readonly ILogger<PrimitiveValueReader> _logger;
 
+    // Single source of truth for all supported types and their handlers
+    private static readonly Dictionary<string, Func<nint, string, string, string?>> TypeHandlers = new()
+    {
+        // Numeric types
+        ["float32"] = (ptr, cls, prop) => SchemaSystem.GetNetVarFloat(ptr, cls, prop).ToString(),
+        ["int32"] = (ptr, cls, prop) => SchemaSystem.GetNetVarInt32(ptr, cls, prop).ToString(),
+        ["int64"] = (ptr, cls, prop) => SchemaSystem.GetNetVarInt64(ptr, cls, prop).ToString(),
+        ["bool"] = (ptr, cls, prop) => SchemaSystem.GetNetVarBool(ptr, cls, prop).ToString(),
+        ["uint8"] = (ptr, cls, prop) => SchemaSystem.GetNetVarByte(ptr, cls, prop).ToString(),
+        ["uint16"] = (ptr, cls, prop) => SchemaSystem.GetNetVarUInt16(ptr, cls, prop).ToString(),
+        ["uint32"] = (ptr, cls, prop) => SchemaSystem.GetNetVarUInt32(ptr, cls, prop).ToString(),
+        ["uint64"] = (ptr, cls, prop) => SchemaSystem.GetNetVarUInt64(ptr, cls, prop).ToString(),
+        
+        // String types
+        ["string"] = (ptr, cls, prop) => SchemaSystem.GetNetVarString(ptr, cls, prop),
+        ["CUtlString"] = (ptr, cls, prop) => SchemaSystem.GetNetVarUtlString(ptr, cls, prop).ToString(),
+        ["CUtlSymbolLarge"] = (ptr, cls, prop) => SchemaSystem.GetNetVarUtlSymbolLarge(ptr, cls, prop).ToString(),
+        
+        // Vector types (all map to the same handler)
+        ["Vector"] = (ptr, cls, prop) => SchemaSystem.GetNetVarVector(ptr, cls, prop).ToString(),
+        ["VectorWS"] = (ptr, cls, prop) => SchemaSystem.GetNetVarVector(ptr, cls, prop).ToString(),
+        ["CNetworkVelocityVector"] = (ptr, cls, prop) => SchemaSystem.GetNetVarVector(ptr, cls, prop).ToString(),
+        ["CNetworkViewOffsetVector"] = (ptr, cls, prop) => SchemaSystem.GetNetVarVector(ptr, cls, prop).ToString(),
+        ["QAngle"] = (ptr, cls, prop) => SchemaSystem.GetNetVarVector(ptr, cls, prop).ToString(),
+    };
+
     public PrimitiveValueReader(ILogger<PrimitiveValueReader> logger)
     {
         _logger = logger;
@@ -22,37 +49,16 @@ public class PrimitiveValueReader
     /// </summary>
     public string? GetValue(nint entityPtr, string classname, string propertyName, string type)
     {
-        // Normalize type names
-        if (type.Contains("char"))
+        type = NormalizeType(type);
+
+        if (!TypeHandlers.TryGetValue(type, out var handler))
         {
-            type = "string";
+            return null;
         }
 
         try
         {
-            return type switch
-            {
-                // Numeric types
-                "float32" => SchemaSystem.GetNetVarFloat(entityPtr, classname, propertyName).ToString(),
-                "int32" => SchemaSystem.GetNetVarInt32(entityPtr, classname, propertyName).ToString(),
-                "int64" => SchemaSystem.GetNetVarInt64(entityPtr, classname, propertyName).ToString(),
-                "bool" => SchemaSystem.GetNetVarBool(entityPtr, classname, propertyName).ToString(),
-                "uint8" => SchemaSystem.GetNetVarByte(entityPtr, classname, propertyName).ToString(),
-                "uint16" => SchemaSystem.GetNetVarUInt16(entityPtr, classname, propertyName).ToString(),
-                "uint32" => SchemaSystem.GetNetVarUInt32(entityPtr, classname, propertyName).ToString(),
-                "uint64" => SchemaSystem.GetNetVarUInt64(entityPtr, classname, propertyName).ToString(),
-                
-                // String types
-                "string" => SchemaSystem.GetNetVarString(entityPtr, classname, propertyName),
-                "CUtlString" => SchemaSystem.GetNetVarUtlString(entityPtr, classname, propertyName).ToString(),
-                "CUtlSymbolLarge" => SchemaSystem.GetNetVarUtlSymbolLarge(entityPtr, classname, propertyName).ToString(),
-                
-                // Vector types
-                "Vector" or "VectorWS" or "CNetworkVelocityVector" or "CNetworkViewOffsetVector" or "QAngle"
-                    => SchemaSystem.GetNetVarVector(entityPtr, classname, propertyName).ToString(),
-                
-                _ => null
-            };
+            return handler(entityPtr, classname, propertyName);
         }
         catch (Exception ex)
         {
@@ -66,18 +72,13 @@ public class PrimitiveValueReader
     /// </summary>
     public bool CanHandle(string type)
     {
-        if (type.Contains("char"))
-        {
-            type = "string";
-        }
+        type = NormalizeType(type);
+        return TypeHandlers.ContainsKey(type);
+    }
 
-        return type switch
-        {
-            "float32" or "int32" or "int64" or "bool" or "uint8" or "uint16" or "uint32" or "uint64" => true,
-            "string" or "CUtlString" or "CUtlSymbolLarge" => true,
-            "Vector" or "VectorWS" or "CNetworkVelocityVector" or "CNetworkViewOffsetVector" or "QAngle" => true,
-            _ => false
-        };
+    private static string NormalizeType(string type)
+    {
+        return type.Contains("char") ? "string" : type;
     }
 }
 
