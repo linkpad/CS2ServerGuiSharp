@@ -1,0 +1,94 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+        
+    - name: Restore dependencies
+      run: dotnet restore
+      
+    - name: Build and Publish
+      run: dotnet publish -c Release --self-contained false -o publish
+    
+    - name: Create release structure
+      shell: pwsh
+      run: |
+        # Create directory structure
+        New-Item -ItemType Directory -Force -Path "release\sharp\modules\ServerGui" | Out-Null
+        New-Item -ItemType Directory -Force -Path "release\sharp\core" | Out-Null
+        
+        # Copy native DLLs to sharp/core
+        if (Test-Path "publish\runtimes\win-x64\native") {
+          Copy-Item -Path "publish\runtimes\win-x64\native\*" -Destination "release\sharp\core\" -Recurse -Force
+        }
+        
+        # Copy all other files (except runtimes folder) to sharp/modules
+        Get-ChildItem -Path "publish" -Exclude "runtimes" | ForEach-Object {
+          if ($_.PSIsContainer) {
+            Copy-Item -Path $_.FullName -Destination "release\sharp\modules\ServerGui\$($_.Name)" -Recurse -Force
+          } else {
+            Copy-Item -Path $_.FullName -Destination "release\sharp\modules\ServerGui\$($_.Name)" -Force
+          }
+        }
+    
+    - name: Extract version from project
+      shell: pwsh
+      id: get_version
+      run: |
+        $content = Get-Content "ServerGui.csproj" -Raw
+        if ($content -match '<Version>([^<]+)</Version>') {
+          $version = $matches[1].Trim()
+        } else {
+          $version = "1.0.0"
+        }
+        $sha = $env:GITHUB_SHA.Substring(0, 7)
+        $versionWithSha = "$version-$sha"
+        Write-Host "Version: $version"
+        Write-Host "Version with SHA: $versionWithSha"
+        echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+        echo "VERSION_WITH_SHA=$versionWithSha" >> $env:GITHUB_OUTPUT
+    
+    - name: Create ZIP archive
+      shell: pwsh
+      run: |
+        $version = "${{ steps.get_version.outputs.VERSION }}"
+        $versionWithSha = "${{ steps.get_version.outputs.VERSION_WITH_SHA }}"
+        $zipName = "ServerGui-$versionWithSha.zip"
+        Compress-Archive -Path "release\*" -DestinationPath $zipName -Force
+        Write-Host "Created $zipName"
+        echo "ZIP_NAME=$zipName" >> $env:GITHUB_ENV
+        echo "VERSION=$versionWithSha" >> $env:GITHUB_ENV
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          ${{ env.ZIP_NAME }}
+        tag_name: v${{ env.VERSION }}
+        name: Release v${{ env.VERSION }}
+        body: |
+          Automated release from commit ${{ github.sha }}
+          
+          ## Installation
+          Extract the ZIP file and place:
+          - Contents of `sharp/modules/ServerGui/` into your `sharp/modules/ServerGui/` directory
+          - Contents of `sharp/core/` into your `sharp/core/` directory
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
