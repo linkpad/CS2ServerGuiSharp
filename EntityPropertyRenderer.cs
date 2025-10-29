@@ -9,6 +9,7 @@ using Sharp.Shared.CStrike;
 using Sharp.Shared.GameEntities;
 using Sharp.Shared.GameObjects;
 using Sharp.Shared.Types;
+using Sharp.Shared.Types.Tier;
 using Sharp.Shared.Utilities;
 
 namespace ServerGui;
@@ -150,6 +151,12 @@ public class EntityPropertyRenderer
     /// </summary>
     private void RenderCustomType(string fieldName, CustomTypeInfo customTypeInfo)
     {
+        if (customTypeInfo.Kind == CustomTypeKind.UtlVector)
+        {
+            RenderUtlVectorType(fieldName, customTypeInfo);
+            return;
+        }
+
         // Handle array types - render as a simple property
         if (customTypeInfo.Kind == CustomTypeKind.Array)
         {
@@ -166,6 +173,80 @@ public class EntityPropertyRenderer
 
         // Handle nested schema types (pointer, embedded)
         RenderNestedSchemaType(fieldName, customTypeInfo);
+    }
+
+    private void RenderUtlVectorType(string fieldName, CustomTypeInfo customTypeInfo)
+    {
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(2);
+        ImGui.Text("");
+        ImGui.TableSetColumnIndex(0);
+        bool open = ImGui.TreeNodeEx(fieldName, ImGuiTreeNodeFlags.SpanAllColumns);
+        ImGui.TableNextColumn();
+        ImGui.Text(customTypeInfo.FieldType);
+        ImGui.TableNextColumn();
+        
+        if (open)
+        {
+            var elements = _valueResolver.ReadUtlVectorElements(customTypeInfo);
+            
+            if (elements != null && elements.Count > 0)
+            {
+                for (int i = 0; i < elements.Count; i++)
+                {
+                    var element = elements[i];
+                    RenderUtlVectorElement($"{fieldName}[{i}]", element, customTypeInfo.FieldType);
+                }
+            }
+            else
+            {
+                ImGui.TableNextRow();
+                ImGui.TableSetColumnIndex(0);
+                ImGui.TextColored(new Vector4(1.0f, 0.5f, 0.5f, 1.0f), "Empty or unsupported element type");
+            }
+            
+            ImGui.TreePop();
+        }
+    }
+
+    /// <summary>
+    /// Renders a single UtlVector element based on its kind.
+    /// </summary>
+    private void RenderUtlVectorElement(string elementName, UtlVectorElement element, string fieldType)
+    {
+        switch (element.ElementKind)
+        {
+            case UtlVectorElementKind.EntityHandle:
+                if (element.Entity != null)
+                {
+                    ImGui.TableNextRow();
+                    ImGui.TableSetColumnIndex(0);
+                    ImGui.TreeNodeEx(elementName, ImGuiTreeNodeFlags.NoTreePushOnOpen | ImGuiTreeNodeFlags.Leaf);
+
+                    ImGui.TableSetColumnIndex(1);
+                    ImGui.Text(fieldType);
+
+                    ImGui.TableSetColumnIndex(2);
+                    if (ImGui.SmallButton($"{element.Entity.Classname} ({element.Entity.Index})"))
+                    {
+                        _logger.LogInformation("Setting selected entity to {Entity}", element.Entity.Classname);
+                        _onEntitySelected?.Invoke(element.Entity);
+                    }
+                }
+                break;
+
+            case UtlVectorElementKind.Vector:
+            case UtlVectorElementKind.Primitive:
+                if (element.StringValue != null)
+                {
+                    DrawProperty(elementName, element.ElementType, element.StringValue);
+                }
+                break;
+
+            default:
+                DrawProperty(elementName, element.ElementType, "Unsupported element type");
+                break;
+        }
     }
 
     /// <summary>

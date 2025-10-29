@@ -7,6 +7,7 @@ using Sharp.Shared;
 using Sharp.Shared.CStrike;
 using Sharp.Shared.GameEntities;
 using Sharp.Shared.Types;
+using Sharp.Shared.Types.Tier;
 using Sharp.Shared.Utilities;
 
 namespace ServerGui;
@@ -23,6 +24,31 @@ public class CustomTypeInfo
     public IBaseEntity? ReferencedEntity { get; init; }
     public int? ArraySize { get; init; }
     public string ArrayType { get; init; } = string.Empty;
+    public string? UtlVectorElementType { get; init; }
+}
+
+/// <summary>
+/// Represents a single element from a UtlVector with its type information.
+/// </summary>
+public class UtlVectorElement
+{
+    public string ElementType { get; init; } = string.Empty;
+    public UtlVectorElementKind ElementKind { get; init; }
+    public IBaseEntity? Entity { get; init; }
+    public string? StringValue { get; init; }
+    public nint? PointerValue { get; init; }
+}
+
+/// <summary>
+/// The kind of UtlVector element.
+/// </summary>
+public enum UtlVectorElementKind
+{
+    EntityHandle,
+    Vector,
+    Primitive,
+    Pointer,
+    Embedded
 }
 
 /// <summary>
@@ -34,6 +60,8 @@ public enum CustomTypeKind
     EntityHandle,
     /// <summary>Pointer type (*)</summary>
     Pointer,
+    /// <summary>UtlVector type (CNetworkUtlVectorBase&lt;T&gt;)</summary>
+    UtlVector,
     /// <summary>Array type ([N])</summary>
     Array,
     /// <summary>Embedded/Value custom type</summary>
@@ -374,6 +402,174 @@ public class PropertyValueResolver
     }
 
     /// <summary>
+    /// Reads UtlVector elements based on the element type.
+    /// Returns a list of UtlVectorElement objects that can be rendered.
+    /// </summary>
+    public List<UtlVectorElement>? ReadUtlVectorElements(CustomTypeInfo customTypeInfo)
+    {
+        if (customTypeInfo.Kind != CustomTypeKind.UtlVector || 
+            string.IsNullOrEmpty(customTypeInfo.UtlVectorElementType))
+        {
+            return null;
+        }
+
+        var elementType = customTypeInfo.UtlVectorElementType;
+        var ptr = customTypeInfo.TargetPtr;
+
+        try
+        {
+            // Handle CEntityHandle<IBaseEntity> or similar entity handle types
+            if (elementType.Contains("CEntityHandle<") || elementType.Contains("CHandle<"))
+            {
+                return ReadUtlVectorEntityHandles(ptr);
+            }
+
+            // Handle Vector types (Vector, VectorWS, QAngle, etc.)
+            if (elementType.Contains("Vector") || elementType.Contains("QAngle"))
+            {
+                return ReadUtlVectorVectors(ptr);
+            }
+
+            // Handle primitive types (int, float, bool, etc.)
+            if (IsPrimitiveType(elementType))
+            {
+                return ReadUtlVectorPrimitives(ptr, elementType);
+            }
+
+            _logger.LogWarning("Unsupported UtlVector element type: {ElementType}", elementType);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error reading UtlVector elements of type {ElementType}", elementType);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads entity handles from a UtlVector.
+    /// </summary>
+    private List<UtlVectorElement> ReadUtlVectorEntityHandles(nint ptr)
+    {
+        unsafe
+        {
+            var vector = *(CUtlVector<CEntityHandle<IBaseEntity>>*)ptr;
+            var elements = new List<UtlVectorElement>();
+
+            for (int i = 0; i < vector.Size; i++)
+            {
+                var handle = vector[i];
+                var entity = _bridge.EntityManager.FindEntityByHandle(handle);
+                
+                elements.Add(new UtlVectorElement
+                {
+                    ElementType = "CEntityHandle<IBaseEntity>",
+                    ElementKind = UtlVectorElementKind.EntityHandle,
+                    Entity = entity
+                });
+            }
+
+            return elements;
+        }
+    }
+
+    /// <summary>
+    /// Reads vectors from a UtlVector.
+    /// </summary>
+    private List<UtlVectorElement> ReadUtlVectorVectors(nint ptr)
+    {
+        unsafe
+        {
+            var vector = *(CUtlVector<Vector>*)ptr;
+            var elements = new List<UtlVectorElement>();
+
+            for (int i = 0; i < vector.Size; i++)
+            {
+                var vec = vector[i];
+                elements.Add(new UtlVectorElement
+                {
+                    ElementType = "Vector",
+                    ElementKind = UtlVectorElementKind.Vector,
+                    StringValue = vec.ToString()
+                });
+            }
+
+            return elements;
+        }
+    }
+
+    /// <summary>
+    /// Reads primitive values from a UtlVector.
+    /// </summary>
+    private List<UtlVectorElement> ReadUtlVectorPrimitives(nint ptr, string elementType)
+    {
+        unsafe
+        {
+            var elements = new List<UtlVectorElement>();
+
+            // Determine the size and type based on element type
+            switch (elementType)
+            {
+                case "int32":
+                case "int":
+                    var intVector = *(CUtlVector<int>*)ptr;
+                    for (int i = 0; i < intVector.Size; i++)
+                    {
+                        elements.Add(new UtlVectorElement
+                        {
+                            ElementType = elementType,
+                            ElementKind = UtlVectorElementKind.Primitive,
+                            StringValue = intVector[i].ToString()
+                        });
+                    }
+                    break;
+
+                case "float32":
+                case "float":
+                    var floatVector = *(CUtlVector<float>*)ptr;
+                    for (int i = 0; i < floatVector.Size; i++)
+                    {
+                        elements.Add(new UtlVectorElement
+                        {
+                            ElementType = elementType,
+                            ElementKind = UtlVectorElementKind.Primitive,
+                            StringValue = floatVector[i].ToString()
+                        });
+                    }
+                    break;
+
+                case "bool":
+                    var boolVector = *(CUtlVector<bool>*)ptr;
+                    for (int i = 0; i < boolVector.Size; i++)
+                    {
+                        elements.Add(new UtlVectorElement
+                        {
+                            ElementType = elementType,
+                            ElementKind = UtlVectorElementKind.Primitive,
+                            StringValue = boolVector[i].ToString()
+                        });
+                    }
+                    break;
+
+                default:
+                    _logger.LogWarning("Unsupported primitive type for UtlVector: {ElementType}", elementType);
+                    return new List<UtlVectorElement>();
+            }
+
+            return elements;
+        }
+    }
+
+    /// <summary>
+    /// Checks if the given type is a primitive type.
+    /// </summary>
+    private bool IsPrimitiveType(string type)
+    {
+        var primitiveTypes = new[] { "int32", "int", "float32", "float", "bool", "uint8", "uint16", "uint32", "uint64", "int8", "int16", "int64" };
+        return primitiveTypes.Contains(type);
+    }
+
+    /// <summary>
     /// Resolves information about a custom type property.
     /// </summary>
     public CustomTypeInfo? ResolveCustomType(nint entityPtr, string classname, string fieldName, string fieldType)
@@ -383,8 +579,10 @@ public class PropertyValueResolver
             var schemaClassname = fieldType.Replace("*", "");
             var netvarOffset = SchemaSystem.GetNetVarOffset(classname, fieldName);
 
-            // Handle CHandle<T> types
-            if (fieldType.Contains("CHandle<"))
+            if (fieldType.Contains("CNetworkUtlVectorBase<") || fieldType.Contains("CUtlVector<")) {
+                return ResolveUtlVectorType(entityPtr, netvarOffset, schemaClassname, fieldType);
+            } 
+            else if (fieldType.Contains("CHandle<"))
             {
                 return ResolveEntityHandleType(entityPtr, netvarOffset, schemaClassname, fieldType);
             }
@@ -409,6 +607,35 @@ public class PropertyValueResolver
             _logger.LogWarning(ex, "Error resolving custom type {FieldName} of type {FieldType}", fieldName, fieldType);
             return null;
         }
+    }
+
+    private CustomTypeInfo ResolveUtlVectorType(nint entityPtr, int netvarOffset, string schemaClassname, string fieldType)
+    {
+        var vectorPtr = entityPtr.Add(netvarOffset);
+        var elementType = ExtractUtlVectorElementType(fieldType);
+        return new CustomTypeInfo
+        {
+            Kind = CustomTypeKind.UtlVector,
+            TargetPtr = vectorPtr,
+            SchemaClassname = schemaClassname,
+            FieldType = fieldType,
+            UtlVectorElementType = elementType
+        };
+    }
+
+    /// <summary>
+    /// Extracts the element type from a UtlVector field type string.
+    /// Example: "CUtlVector<CEntityHandle<IBaseEntity>>" -> "CEntityHandle<IBaseEntity>"
+    /// </summary>
+    private string? ExtractUtlVectorElementType(string fieldType)
+    {
+        var startIndex = fieldType.IndexOf('<');
+        if (startIndex == -1) return null;
+        
+        var endIndex = fieldType.LastIndexOf('>');
+        if (endIndex == -1 || endIndex <= startIndex) return null;
+        
+        return fieldType.Substring(startIndex + 1, endIndex - startIndex - 1);
     }
 
     /// <summary>
