@@ -37,7 +37,7 @@ jobs:
         }
         
         # Copy all other files (except runtimes folder) to sharp/modules
-        Get-ChildItem -Path "publish" -Exclude "runtimes" | ForEach-Object {
+        Get-ChildItem -Path "publish" | ForEach-Object {
           if ($_.PSIsContainer) {
             Copy-Item -Path $_.FullName -Destination "release\sharp\modules\ServerGui\$($_.Name)" -Recurse -Force
           } else {
