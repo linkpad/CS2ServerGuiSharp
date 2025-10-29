@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Sharp.Shared.Enums;
@@ -15,6 +16,18 @@ public class EnumValueReader
 {
     private readonly ILogger<EnumValueReader> _logger;
 
+    // Single source of truth for all supported enum types and their handlers
+    private static readonly Dictionary<string, Func<nint, string, string, string?>> TypeHandlers = new()
+    {
+        ["Color"] = GetColorValue,
+        ["HitGroup_t"] = CreateHandler<HitGroupType>(),
+        ["RenderFx_t"] = CreateHandler<RenderFx>(),
+        ["RenderMode_t"] = CreateHandler<RenderMode>(),
+        ["MoveType_t"] = CreateHandler<MoveType>(),
+        ["MoveCollide_t"] = CreateHandler<MoveCollideType>(),
+        ["TakeDamageFlags_t"] = CreateHandler<TakeDamageFlags>(),
+    };
+
     public EnumValueReader(ILogger<EnumValueReader> logger)
     {
         _logger = logger;
@@ -25,19 +38,16 @@ public class EnumValueReader
     /// </summary>
     public string? GetValue(nint entityPtr, string classname, string propertyName, string enumType)
     {
+        enumType = NormalizeType(enumType);
+
+        if (!TypeHandlers.TryGetValue(enumType, out var handler))
+        {
+            return null;
+        }
+
         try
         {
-            return enumType switch
-            {
-                "Color" => GetColorValue(entityPtr, classname, propertyName),
-                "HitGroup_t" => GetEnumValue<HitGroupType>(entityPtr, classname, propertyName),
-                "RenderFx_t" => GetEnumValue<RenderFx>(entityPtr, classname, propertyName),
-                "RenderMode_t" => GetEnumValue<RenderMode>(entityPtr, classname, propertyName),
-                "MoveType_t" => GetEnumValue<MoveType>(entityPtr, classname, propertyName),
-                "MoveCollide_t" => GetEnumValue<MoveCollideType>(entityPtr, classname, propertyName),
-                "TakeDamageFlags_t" => GetEnumValue<TakeDamageFlags>(entityPtr, classname, propertyName),
-                _ => null
-            };
+            return handler(entityPtr, classname, propertyName);
         }
         catch (Exception ex)
         {
@@ -51,18 +61,14 @@ public class EnumValueReader
     /// </summary>
     public bool CanHandle(string type)
     {
-        return type switch
-        {
-            "Color" or "HitGroup_t" or "RenderFx_t" or "RenderMode_t" or 
-            "MoveType_t" or "MoveCollide_t" or "TakeDamageFlags_t" => true,
-            _ => false
-        };
+        type = NormalizeType(type);
+        return TypeHandlers.ContainsKey(type);
     }
 
     /// <summary>
     /// Gets a generic enum value using unsafe code.
     /// </summary>
-    private string? GetEnumValue<T>(nint entityPtr, string classname, string propertyName) where T : unmanaged
+    private static string? GetEnumValue<T>(nint entityPtr, string classname, string propertyName) where T : unmanaged
     {
         unsafe
         {
@@ -75,7 +81,7 @@ public class EnumValueReader
     /// <summary>
     /// Special handling for Color type to format it nicely.
     /// </summary>
-    private string? GetColorValue(nint entityPtr, string classname, string propertyName)
+    private static string? GetColorValue(nint entityPtr, string classname, string propertyName)
     {
         unsafe
         {
@@ -83,6 +89,16 @@ public class EnumValueReader
             var color = *(Color*)(entityPtr + netvarOffset);
             return $"Color({color.R}, {color.G}, {color.B})";
         }
+    }
+
+    private static string NormalizeType(string type)
+    {
+        return type;
+    }
+
+    private static Func<nint, string, string, string?> CreateHandler<T>() where T : unmanaged
+    {
+        return GetEnumValue<T>;
     }
 }
 
