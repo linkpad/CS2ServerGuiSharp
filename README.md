@@ -1,6 +1,6 @@
-# CS2 Server GUI - C# port
+# CS2 Server GUI - ModSharp
 
-This project is a C# port of the original C++ [CS2ServerGUI](https://github.com/Source2ZE/CS2ServerGUI/tree/master) using ImGui.NET and Silk.NET.
+This project is a C# port of the original C++ [CS2ServerGUI](https://github.com/Source2ZE/CS2ServerGUI/tree/master) using ImGui.NET and Silk.NET for [ModSharp](https://github.com/Kxnrl/modsharp-public).
 
 # building
 - dotnet publish

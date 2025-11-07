@@ -50,7 +50,6 @@ public class ArrayValueReader
 
         if (!TypeHandlers.TryGetValue(arrayType, out var handler))
         {
-            _logger.LogWarning("Unsupported array element type: {ArrayType}", arrayType);
             return null;
         }
 
@@ -58,9 +57,8 @@ public class ArrayValueReader
         {
             handler(arrayPtr, arraySize, values);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _logger.LogWarning(ex, "Error reading array values of type {ArrayType}", arrayType);
             return null;
         }
 

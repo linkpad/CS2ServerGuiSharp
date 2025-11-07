@@ -62,9 +62,8 @@ public class EntityPropertyRenderer
             {
                 DrawEntityProperties(entity);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                _logger.LogError(ex, "Error displaying entity properties");
                 ImGui.Text("Error loading entity properties");
             }
 
@@ -79,9 +78,8 @@ public class EntityPropertyRenderer
             var schemaInfo = Sharp.Shared.SharedGameObject.SchemaInfo[entity.GetSchemaClassname()];
             DumpEntitySchema(entity.GetAbsPtr(), schemaInfo, true);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _logger.LogError(ex, "Error drawing entity schema");
             ImGui.Text("Error loading entity schema");
         }
     }
@@ -124,28 +122,11 @@ public class EntityPropertyRenderer
                     // Handle regular properties
                     DrawProperty(field.Key, field.Value.Type, value);
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    _logger.LogWarning(ex, "Error accessing field {FieldName} - type {FieldType}", field.Key, field.Value.Type);
                 }
             }
         }
-
-        // this should be called to get all fields from all base classes, but atm its kinda bugged out
-        // as the schemaInfo.Fields already contains all fields from the base classes (it looks like)
-        /* 
-        if (schemaInfo.BaseClasses != null)
-        {
-            foreach (var baseClass in schemaInfo.BaseClasses)
-            {
-                if (baseClass == schemaInfo.ClassName) continue;
-                if (Sharp.Shared.SharedGameObject.SchemaInfo.ContainsKey(baseClass))
-                {
-                    var baseSchemaInfo = Sharp.Shared.SharedGameObject.SchemaInfo[baseClass];
-                    DumpEntitySchema(entityPtr, baseSchemaInfo, true);
-                }
-            }
-        } */
     }
 
     /// <summary>
@@ -238,7 +219,6 @@ public class EntityPropertyRenderer
                     ImGui.TableSetColumnIndex(2);
                     if (ImGui.SmallButton($"{element.Entity.Classname} ({element.Entity.Index})"))
                     {
-                        _logger.LogInformation("Setting selected entity to {Entity}", element.Entity.Classname);
                         _onEntitySelected?.Invoke(element.Entity);
                     }
                 }
@@ -289,11 +269,12 @@ public class EntityPropertyRenderer
                         }
                         ImGui.TreePop();
                     }
+                } else {
+                    DrawProperty(fieldName, customTypeInfo.FieldType, "Error reading array");
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                _logger.LogWarning(ex, "Error rendering array {FieldName}", fieldName);
                 DrawProperty(fieldName, customTypeInfo.FieldType, "Error reading array");
             }
         }
@@ -322,7 +303,6 @@ public class EntityPropertyRenderer
             ImGui.TableSetColumnIndex(2);
             if (ImGui.SmallButton($"{entityFound.Classname} ({entityFound.Index})"))
             {
-                _logger.LogInformation("Setting selected entity to {Entity}", entityFound.Classname);
                 _onEntitySelected?.Invoke(entityFound);
             }
         }
@@ -351,7 +331,6 @@ public class EntityPropertyRenderer
             ImGui.TableSetColumnIndex(2);
             if (ImGui.SmallButton($"{entityFound.Classname} ({entityFound.Index})"))
             {
-                _logger.LogInformation("Setting selected entity to {Entity}", entityFound.Classname);
                 _onEntitySelected?.Invoke(entityFound);
             }
         }

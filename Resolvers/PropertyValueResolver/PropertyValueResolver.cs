@@ -92,9 +92,8 @@ public class PropertyValueResolver
             // Check if it's a custom type
             return IsCustomType(type) ? CUSTOM_TYPE_MARKER : $"Unknown type: {type}";
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _logger.LogWarning(ex, "Error resolving property {PropertyName} of type {Type}", propertyName, type);
             return "Error reading value";
         }
     }

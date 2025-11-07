@@ -84,9 +84,8 @@ public class UtlVectorReader
                 _ => HandleUnsupportedType(elementType)
             };
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _logger.LogWarning(ex, "Error reading UtlVector elements of type {ElementType}", elementType);
             return null;
         }
     }
@@ -149,9 +148,8 @@ public class UtlVectorReader
                 });
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            logger.LogWarning(ex, "Error reading UtlVector of primitive type {ElementType}", elementType);
             return null;
         }
     }
@@ -174,7 +172,6 @@ public class UtlVectorReader
     /// </summary>
     private List<UtlVectorElement>? HandleUnsupportedType(string elementType)
     {
-        _logger.LogWarning("Unsupported UtlVector element type: {ElementType}", elementType);
         return null;
     }
 }

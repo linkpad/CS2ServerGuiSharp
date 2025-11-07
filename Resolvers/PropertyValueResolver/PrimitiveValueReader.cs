@@ -60,9 +60,8 @@ public class PrimitiveValueReader
         {
             return handler(entityPtr, classname, propertyName);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _logger.LogWarning(ex, "Error reading primitive property {PropertyName} of type {Type}", propertyName, type);
             return null;
         }
     }

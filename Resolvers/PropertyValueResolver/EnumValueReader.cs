@@ -50,10 +50,9 @@ public class EnumValueReader
         {
             return GetEnumValueDynamic(entityPtr, classname, propertyName, enumTypeObj);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _logger.LogWarning(ex, "Error reading enum property {PropertyName} of type {EnumType}", propertyName, enumType);
-            return null;
+            return "unsupported enum type";
         }
     }
 

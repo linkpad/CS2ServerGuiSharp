@@ -57,9 +57,8 @@ public class CustomTypeResolver
             // Handle embedded/value custom types
             return ResolveEmbeddedType(entityPtr, netvarOffset, schemaClassname, fieldType);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _logger.LogWarning(ex, "Error resolving custom type {FieldName} of type {FieldType}", fieldName, fieldType);
             return null;
         }
     }
